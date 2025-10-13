@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Etiquetas con Código de Barras</title>
+
+    <link rel="stylesheet" href="styles.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>Generador de Etiquetas con Código de Barras</h1>
+
+    <div class="card">
+        <h2>Configuración de Página y Etiquetas (en milímetros)</h2>
+        <div class="grid-container">
+            <div class="form-group">
+                <label for="paperSize">Tamaño de Papel</label>
+                <select id="paperSize">
+                    <option value="a4">A4 (210 x 297 mm)</option>
+                    <option value="letter">Letter (215.9 x 279.4 mm)</option>
+                    <option value="custom">Personalizado</option>
+                </select>
+            </div>
+            <div id="customPaperSize" class="grid-container">
+                <div class="form-group">
+                    <label for="customWidth">Ancho Papel</label>
+                    <input type="number" id="customWidth" value="210">
+                </div>
+                <div class="form-group">
+                    <label for="customHeight">Alto Papel</label>
+                    <input type="number" id="customHeight" value="297">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="labelWidth">Ancho Etiqueta</label>
+                <input type="number" id="labelWidth" value="60">
+            </div>
+            <div class="form-group">
+                <label for="labelHeight">Alto Etiqueta</label>
+                <input type="number" id="labelHeight" value="30">
+            </div>
+            <div class="form-group">
+                <label for="marginTop">Margen Superior</label>
+                <input type="number" id="marginTop" value="10">
+            </div>
+            <div class="form-group">
+                <label for="marginLeft">Margen Izquierdo</label>
+                <input type="number" id="marginLeft" value="10">
+            </div>
+            <div class="form-group">
+                <label for="hSpacing">Espacio Horizontal</label>
+                <input type="number" id="hSpacing" value="5">
+            </div>
+            <div class="form-group">
+                <label for="vSpacing">Espacio Vertical</label>
+                <input type="number" id="vSpacing" value="5">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Configuración del Código de Barras</h2>
+        <div class="grid-container">
+            <div class="form-group">
+                <label for="barcodeType">Tipo de Código</label>
+                <select id="barcodeType">
+                    <option value="CODE128" selected>CODE128</option>
+                    <option value="EAN13">EAN13</option>
+                    <option value="UPC">UPC-A</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="barcodeHeight">Altura del Código</label>
+                <input type="number" id="barcodeHeight" value="15">
+            </div>
+            <div class="form-group">
+                <label for="fontSize">Tamaño Fuente (pt)</label>
+                <input type="number" id="fontSize" value="8">
+            </div>
+            <div class="form-group">
+                <label for="quantity">Cantidad a Generar</label>
+                <input type="number" id="quantity" value="50">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Evitar Duplicados</h2>
+        <p>Sube PDFs generados previamente para asegurar que los nuevos códigos de barra no se repitan.</p>
+        <div class="form-group">
+            <label for="pdfUpload">Subir PDFs (.pdf)</label>
+            <input type="file" id="pdfUpload" multiple accept=".pdf">
+        </div>
+        <div id="uploadStatus"></div>
+    </div>
+
+    <button id="generateBtn">Generar PDF</button>
+    <div id="loader">
+        <p>Procesando, por favor espera...</p>
+        <div class="spinner"></div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
