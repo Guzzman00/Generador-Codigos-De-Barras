@@ -9,6 +9,8 @@ const pdfUploadInput = document.getElementById('pdfUpload');
 const generateBtn = document.getElementById('generateBtn');
 const loader = document.getElementById('loader');
 const uploadStatus = document.getElementById('uploadStatus');
+const pdfReplicateUploadInput = document.getElementById('pdfReplicateUpload');
+const replicateBtn = document.getElementById('replicateBtn');
 
 // Conjunto para almacenar series existentes y evitar duplicados
 let existingSerials = new Set();
@@ -18,7 +20,7 @@ paperSizeSelect.addEventListener('change', () => {
     customPaperSizeDiv.style.display = paperSizeSelect.value === 'custom' ? 'grid' : 'none';
 });
 
-// --- LÓGICA CORREGIDA PARA LEER PDFS CON SEMILLA ---
+// --- LÓGICA PARA LEER PDFS (EVITAR DUPLICADOS) ---
 pdfUploadInput.addEventListener('change', async (event) => {
     const files = event.target.files;
     if (!files.length) return;
@@ -43,17 +45,16 @@ pdfUploadInput.addEventListener('change', async (event) => {
             const pdf = await pdfjsLib.getDocument(typedarray).promise;
             const metadata = await pdf.getMetadata();
 
-            // Buscamos la semilla en el campo 'Keywords'
             if (metadata.info && metadata.info.Keywords) {
                 const seed = metadata.info.Keywords;
                 if (!isNaN(seed) && seed.trim() !== '') {
                     seedsFound++;
                     const configData = JSON.parse(metadata.info.Subject || '{}');
-                    const quantity = configData.quantity || 0;
+                    const quantity = configData.quantity;
                     const barcodeType = configData.barcodeType;
 
                     if (quantity > 0 && barcodeType) {
-                        const prng = mulberry32(parseInt(seed, 10)); // Inicializamos el generador con la semilla del archivo
+                        const prng = mulberry32(parseInt(seed, 10));
                         for (let i = 0; i < quantity; i++) {
                             const serial = generateRandomSerial(barcodeType, prng);
                             existingSerials.add(serial);
@@ -73,7 +74,7 @@ pdfUploadInput.addEventListener('change', async (event) => {
 });
 
 
-// --- Lógica Principal de Generación de PDF ---
+// --- Lógica Principal de Generación de PDF NUEVO ---
 generateBtn.addEventListener('click', async () => {
     loader.style.display = 'block';
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -88,7 +89,58 @@ generateBtn.addEventListener('click', async () => {
     }
 });
 
-// --- Generador de Números Pseudo-Aleatorios (PRNG) basado en una semilla ---
+
+// --- NUEVA LÓGICA PARA REPLICAR PDF ---
+replicateBtn.addEventListener('click', async () => {
+    const files = pdfReplicateUploadInput.files;
+    if (files.length !== 1) {
+        alert("Por favor, selecciona un único archivo PDF para replicar.");
+        return;
+    }
+
+    loader.style.display = 'block';
+
+    try {
+        const file = files[0];
+        const fileReader = new FileReader();
+        await new Promise((resolve, reject) => {
+            fileReader.onload = resolve;
+            fileReader.onerror = reject;
+            fileReader.readAsArrayBuffer(file);
+        });
+
+        const typedarray = new Uint8Array(fileReader.result);
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        const metadata = await pdf.getMetadata();
+
+        if (metadata.info && metadata.info.Keywords && metadata.info.Subject) {
+            const seed = metadata.info.Keywords;
+            const config = JSON.parse(metadata.info.Subject);
+
+            // Rellenamos el formulario con la configuración leída
+            Object.keys(config).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.value = config[key];
+                }
+            });
+            paperSizeSelect.dispatchEvent(new Event('change'));
+
+            generatePdf(parseInt(seed, 10));
+
+        } else {
+            alert("Este PDF no contiene la información de semilla y configuración necesaria para ser replicado.");
+        }
+    } catch (error) {
+        console.error("Error al replicar el PDF:", error);
+        alert("Ocurrió un error al leer el PDF para replicar. Revisa la consola.");
+    } finally {
+        loader.style.display = 'none';
+    }
+});
+
+
+// --- Generador de Números Pseudo-Aleatorios (PRNG) ---
 function mulberry32(a) {
     return function() {
         var t = a += 0x6D2B79F5;
@@ -98,139 +150,157 @@ function mulberry32(a) {
     }
 }
 
-function generatePdf() {
+// --- NUEVA FUNCIÓN DE VALIDACIÓN "A PRUEBA DE BALAS" ---
+function validarConfiguracion(config, paperWidth, paperHeight) {
+    if (config.labelWidth <= 0 || config.labelHeight <= 0 || config.quantity <= 0) {
+        alert("Error: El ancho/alto de la etiqueta y la cantidad deben ser mayores que cero.");
+        return false;
+    }
+    if (config.marginTop < 0 || config.marginLeft < 0 || config.hSpacing < 0 || config.vSpacing < 0 || config.barcodeHeight <= 0 || config.fontSize <=0) {
+        alert("Error: Los márgenes, espaciados, altura de código y tamaño de fuente no pueden ser negativos o cero.");
+        return false;
+    }
+    if (config.marginLeft >= paperWidth || config.marginTop >= paperHeight) {
+        alert("Error: Los márgenes son más grande que el propio papel.");
+        return false;
+    }
+    if (config.labelWidth + config.marginLeft > paperWidth || config.labelHeight + config.marginTop > paperHeight) {
+        alert("Error: La primera etiqueta no cabe en el papel con los márgenes especificados.");
+        return false;
+    }
+    if (config.barcodeHeight >= config.labelHeight) {
+        alert("Error: La 'Altura del Código' no puede ser mayor o igual al 'Alto Etiqueta'.");
+        return false;
+    }
+    return true; // Si todas las validaciones pasan
+}
+
+// --- FUNCIÓN DE GENERACIÓN DE PDF MODIFICADA ---
+function generatePdf(seedToUse = null) {
     const { jsPDF } = window.jspdf;
 
     const config = {
-        paper: document.getElementById('paperSize').value,
-        customW: parseFloat(document.getElementById('customWidth').value),
-        customH: parseFloat(document.getElementById('customHeight').value),
-        labelW: parseFloat(document.getElementById('labelWidth').value),
-        labelH: parseFloat(document.getElementById('labelHeight').value),
-        marginT: parseFloat(document.getElementById('marginTop').value),
-        marginL: parseFloat(document.getElementById('marginLeft').value),
+        paperSize: document.getElementById('paperSize').value,
+        customWidth: parseFloat(document.getElementById('customWidth').value),
+        customHeight: parseFloat(document.getElementById('customHeight').value),
+        labelWidth: parseFloat(document.getElementById('labelWidth').value),
+        labelHeight: parseFloat(document.getElementById('labelHeight').value),
+        marginTop: parseFloat(document.getElementById('marginTop').value),
+        marginLeft: parseFloat(document.getElementById('marginLeft').value),
         hSpacing: parseFloat(document.getElementById('hSpacing').value),
         vSpacing: parseFloat(document.getElementById('vSpacing').value),
         barcodeType: document.getElementById('barcodeType').value,
-        barcodeH: parseFloat(document.getElementById('barcodeHeight').value),
+        barcodeHeight: parseFloat(document.getElementById('barcodeHeight').value),
         fontSize: parseFloat(document.getElementById('fontSize').value),
         quantity: parseInt(document.getElementById('quantity').value, 10),
     };
 
-    if (Object.values(config).some(v => isNaN(v) && typeof v !== 'string')) {
-        alert("Por favor, rellena todos los campos numéricos correctamente.");
-        return;
-    }
-
     let paperFormat, paperWidth, paperHeight;
-    if (config.paper === 'custom') {
-        paperWidth = config.customW;
-        paperHeight = config.customH;
+    if (config.paperSize === 'custom') {
+        paperWidth = config.customWidth;
+        paperHeight = config.customHeight;
         paperFormat = [paperWidth, paperHeight];
     } else {
-        paperFormat = config.paper;
+        paperFormat = config.paperSize;
         const tempDoc = new jsPDF({ unit: 'mm', format: paperFormat });
         paperWidth = tempDoc.internal.pageSize.getWidth();
         paperHeight = tempDoc.internal.pageSize.getHeight();
     }
 
-    if (config.labelW + config.marginL > paperWidth || config.labelH + config.marginT > paperHeight) {
-        alert("Error de medidas: La etiqueta (incluyendo el margen) es más ancha o más alta que el papel.\n\nPor favor, ajusta las dimensiones.");
-        return;
+    // Llamamos a la nueva función de validación
+    if (!validarConfiguracion(config, paperWidth, paperHeight)) {
+        return; // Detiene la ejecución si hay un error
     }
 
     const doc = new jsPDF({ unit: 'mm', format: paperFormat });
-
-    // --- LÓGICA DE SEMILLA CORREGIDA ---
-    const seed = Date.now();
-    const prng = mulberry32(seed); // Se crea y se GUARDA en la variable 'prng'
-
-    let x = config.marginL;
-    let y = config.marginT;
+    const seed = seedToUse || Date.now();
+    const prng = mulberry32(seed);
+    let x = config.marginLeft;
+    let y = config.marginTop;
     const newlyGeneratedSerials = [];
 
     for (let i = 0; i < config.quantity; i++) {
         let newSerial;
-        do {
-            // Se PASA el generador 'prng' a la función
+        if (seedToUse) {
             newSerial = generateRandomSerial(config.barcodeType, prng);
-        } while (existingSerials.has(newSerial));
+        } else {
+            do {
+                newSerial = generateRandomSerial(config.barcodeType, prng);
+            } while (existingSerials.has(newSerial));
+        }
 
         newlyGeneratedSerials.push(newSerial);
-        existingSerials.add(newSerial);
+        if (!seedToUse) { existingSerials.add(newSerial); }
 
         const canvas = document.createElement('canvas');
         try {
             JsBarcode(canvas, newSerial, {
                 format: config.barcodeType,
                 width: 2,
-                height: config.barcodeH * 3.78,
-                displayValue: true,
-                text: newSerial,
-                fontOptions: "bold",
-                fontSize: config.fontSize * 2,
+                height: config.barcodeHeight * 3.78,
+                displayValue: true, text: newSerial,
+                fontOptions: "bold", fontSize: config.fontSize * 2,
                 margin: 10
             });
         } catch (error) {
-            alert(`Error al generar el código de barras para el serial "${newSerial}".\nEl formato "${config.barcodeType}" podría no ser compatible con el dato.\n\nError: ${error.message}`);
+            alert(`Error al generar el código de barras...`);
             return;
         }
 
         const barcodeDataUrl = canvas.toDataURL('image/png');
-        doc.addImage(barcodeDataUrl, 'PNG', x, y, config.labelW, config.labelH);
+        doc.addImage(barcodeDataUrl, 'PNG', x, y, config.labelWidth, config.labelHeight);
 
         if (i < config.quantity - 1) {
-            x += config.labelW + config.hSpacing;
-            if (x + config.labelW > paperWidth) {
-                x = config.marginL;
-                y += config.labelH + config.vSpacing;
-                if (y + config.labelH > paperHeight) {
+            x += config.labelWidth + config.hSpacing;
+            if (x + config.labelWidth > paperWidth) {
+                x = config.marginLeft;
+                y += config.labelHeight + config.vSpacing;
+                if (y + config.labelHeight > paperHeight) {
                     doc.addPage();
-                    x = config.marginL;
-                    y = config.marginT;
+                    x = config.marginLeft;
+                    y = config.marginTop;
                 }
             }
         }
     }
 
     if (newlyGeneratedSerials.length > 0) {
+        const configToSave = {
+            paperSize: config.paperSize, customWidth: config.customWidth,
+            customHeight: config.customHeight, labelWidth: config.labelWidth,
+            labelHeight: config.labelHeight, marginTop: config.marginTop,
+            marginLeft: config.marginLeft, hSpacing: config.hSpacing,
+            vSpacing: config.vSpacing, barcodeType: config.barcodeType,
+            barcodeHeight: config.barcodeHeight, fontSize: config.fontSize,
+            quantity: config.quantity,
+        };
         doc.setDocumentProperties({
             title: 'Etiquetas de Códigos de Barras',
-            subject: JSON.stringify({quantity: config.quantity, barcodeType: config.barcodeType}),
+            subject: JSON.stringify(configToSave),
             author: 'GervaSoft E.I.R.L.',
             keywords: seed.toString(),
             creator: 'Generador de Etiquetas Web'
         });
     }
 
-    doc.save(`etiquetas_${new Date().toISOString().slice(0, 10)}.pdf`);
+    const filename = seedToUse ? `replica_${seed}.pdf` : `etiquetas_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(filename);
 }
 
 function calcularChecksum(data, isEan13) {
-    let sum1 = 0;
-    let sum2 = 0;
-
+    let sum1 = 0, sum2 = 0;
     const multiplier1 = isEan13 ? 1 : 3;
     const multiplier2 = isEan13 ? 3 : 1;
-
     for (let i = 0; i < data.length; i++) {
-        if ((i + 1) % 2 !== 0) {
-            sum1 += parseInt(data[i], 10);
-        } else {
-            sum2 += parseInt(data[i], 10);
-        }
+        if ((i + 1) % 2 !== 0) { sum1 += parseInt(data[i], 10); }
+        else { sum2 += parseInt(data[i], 10); }
     }
-
     const totalSum = (sum1 * multiplier1) + (sum2 * multiplier2);
-    // --- CORRECCIÓN FINAL DEL ERROR DE TIPEO ---
     const checksum = (10 - (totalSum % 10)) % 10;
     return checksum;
 }
 
-
-// --- FUNCIÓN DE AYUDA MODIFICADA para usar el generador predecible (prng) ---
 function generateRandomSerial(format, prng) {
-    // Si no se pasa un generador, usamos el aleatorio por defecto (Math.random)
     const random = prng || Math.random;
     const nums = '0123456789';
     const getRandomChar = (str) => str.charAt(Math.floor(random() * str.length));
@@ -238,31 +308,22 @@ function generateRandomSerial(format, prng) {
     switch (format) {
         case 'EAN13': {
             let baseData = '';
-            for (let i = 0; i < 12; i++) {
-                baseData += getRandomChar(nums);
-            }
+            for (let i = 0; i < 12; i++) { baseData += getRandomChar(nums); }
             const checksum = calcularChecksum(baseData, true);
             return baseData + checksum;
         }
         case 'UPC': {
             let baseData = '';
-            for (let i = 0; i < 11; i++) {
-                baseData += getRandomChar(nums);
-            }
+            for (let i = 0; i < 11; i++) { baseData += getRandomChar(nums); }
             const checksum = calcularChecksum(baseData, false);
             return baseData + checksum;
         }
         case 'CODE128':
         default: {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            let charPart = '';
-            let numPart = '';
-            for (let i = 0; i < 3; i++) {
-                charPart += getRandomChar(chars);
-            }
-            for (let i = 0; i < 5; i++) {
-                numPart += getRandomChar(nums);
-            }
+            let charPart = '', numPart = '';
+            for (let i = 0; i < 3; i++) { charPart += getRandomChar(chars); }
+            for (let i = 0; i < 5; i++) { numPart += getRandomChar(nums); }
             return `${charPart}-${numPart}`;
         }
     }

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="styles.css">
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode/dist/JsBarcode.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
@@ -90,6 +90,8 @@
         </div>
     </div>
 
+    <button id="generateBtn">Generar PDF Nuevo</button>
+
     <div class="card">
         <h2>Evitar Duplicados</h2>
         <p>Sube PDFs generados previamente para asegurar que los nuevos códigos de barra no se repitan.</p>
@@ -100,9 +102,18 @@
         <div id="uploadStatus"></div>
     </div>
 
-    <button id="generateBtn">Generar PDF</button>
+    <div class="card">
+        <h2>Replicar PDF Exacto</h2>
+        <p>Sube un único PDF para cargar su configuración y replicarlo de forma idéntica.</p>
+        <div class="form-group">
+            <label for="pdfReplicateUpload">Subir PDF para Replicar</label>
+            <input type="file" id="pdfReplicateUpload" accept=".pdf">
+        </div>
+        <button id="replicateBtn">Replicar PDF Subido</button>
+    </div>
+
     <div id="loader">
-        <p>Procesando, por favor espera...</p>
+        <p></p>
         <div class="spinner"></div>
     </div>
 </div>
