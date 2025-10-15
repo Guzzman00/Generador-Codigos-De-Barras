@@ -90,7 +90,7 @@ generateBtn.addEventListener('click', async () => {
 });
 
 
-// --- NUEVA LÓGICA PARA REPLICAR PDF ---
+// --- LÓGICA PARA REPLICAR PDF ---
 replicateBtn.addEventListener('click', async () => {
     const files = pdfReplicateUploadInput.files;
     if (files.length !== 1) {
@@ -117,7 +117,6 @@ replicateBtn.addEventListener('click', async () => {
             const seed = metadata.info.Keywords;
             const config = JSON.parse(metadata.info.Subject);
 
-            // Rellenamos el formulario con la configuración leída
             Object.keys(config).forEach(key => {
                 const element = document.getElementById(key);
                 if (element) {
@@ -150,32 +149,32 @@ function mulberry32(a) {
     }
 }
 
-// --- NUEVA FUNCIÓN DE VALIDACIÓN "A PRUEBA DE BALAS" ---
+// --- FUNCIÓN DE VALIDACIÓN "A PRUEBA DE BALAS" ---
 function validarConfiguracion(config, paperWidth, paperHeight) {
     if (config.labelWidth <= 0 || config.labelHeight <= 0 || config.quantity <= 0) {
-        alert("Error: El ancho/alto de la etiqueta y la cantidad deben ser mayores que cero.");
+        alert("El ancho/alto de la etiqueta y la cantidad deben ser mayores que cero.");
         return false;
     }
     if (config.marginTop < 0 || config.marginLeft < 0 || config.hSpacing < 0 || config.vSpacing < 0 || config.barcodeHeight <= 0 || config.fontSize <=0) {
-        alert("Error: Los márgenes, espaciados, altura de código y tamaño de fuente no pueden ser negativos o cero.");
+        alert("Los márgenes, espaciados, altura de código y tamaño de fuente no pueden ser negativos o cero.");
         return false;
     }
     if (config.marginLeft >= paperWidth || config.marginTop >= paperHeight) {
-        alert("Error: Los márgenes son más grande que el propio papel.");
+        alert("Error: El margen es más grande que el propio papel.");
         return false;
     }
     if (config.labelWidth + config.marginLeft > paperWidth || config.labelHeight + config.marginTop > paperHeight) {
-        alert("Error: La primera etiqueta no cabe en el papel con los márgenes especificados.");
+        alert("Error de medidas: La primera etiqueta no cabe en el papel con los márgenes especificados.");
         return false;
     }
     if (config.barcodeHeight >= config.labelHeight) {
-        alert("Error: La 'Altura del Código' no puede ser mayor o igual al 'Alto Etiqueta'.");
+        alert("Error de configuración: La 'Altura del Código' no puede ser mayor o igual al 'Alto Etiqueta'.");
         return false;
     }
-    return true; // Si todas las validaciones pasan
+    return true;
 }
 
-// --- FUNCIÓN DE GENERACIÓN DE PDF MODIFICADA ---
+// --- FUNCIÓN DE GENERACIÓN DE PDF ---
 function generatePdf(seedToUse = null) {
     const { jsPDF } = window.jspdf;
 
@@ -207,12 +206,24 @@ function generatePdf(seedToUse = null) {
         paperHeight = tempDoc.internal.pageSize.getHeight();
     }
 
-    // Llamamos a la nueva función de validación
     if (!validarConfiguracion(config, paperWidth, paperHeight)) {
-        return; // Detiene la ejecución si hay un error
+        return;
     }
 
-    const doc = new jsPDF({ unit: 'mm', format: paperFormat });
+    // --- ZONA DE LA CORRECCIÓN ---
+    // Determinamos la orientación correcta para jsPDF
+    let orientation = 'portrait'; // por defecto es vertical
+    if (paperWidth > paperHeight) {
+        orientation = 'landscape'; // si es más ancho que alto, es horizontal
+    }
+
+    const doc = new jsPDF({
+        orientation: orientation,
+        unit: 'mm',
+        format: paperFormat
+    });
+    // --- FIN DE LA CORRECCIÓN ---
+
     const seed = seedToUse || Date.now();
     const prng = mulberry32(seed);
     let x = config.marginLeft;
