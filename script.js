@@ -247,7 +247,7 @@ function generatePdfFromItems(items, nombreTrabajador, sapTrabajador) {
     }
 
     const fechaActual = new Date().toISOString().slice(0, 10);
-    const filename = `Etiquetas_Retiro_${nombreTrabajador}_${sapTrabajador}_${fechaActual}.pdf`;
+    const filename = `etiquetas_Retiro_${nombreTrabajador}_${sapTrabajador}_${fechaActual}.pdf`;
     doc.save(filename);
 }
 
