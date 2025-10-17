@@ -94,7 +94,7 @@ generateBtn.addEventListener('click', async () => {
 replicateBtn.addEventListener('click', async () => {
     const files = pdfReplicateUploadInput.files;
     if (files.length !== 1) {
-        alert("Por favor, selecciona un único archivo PDF para replicar.");
+        alert("Por favor, selecciona un único archivo PDF para procesar.");
         return;
     }
 
@@ -113,31 +113,143 @@ replicateBtn.addEventListener('click', async () => {
         const pdf = await pdfjsLib.getDocument(typedarray).promise;
         const metadata = await pdf.getMetadata();
 
-        if (metadata.info && metadata.info.Keywords && metadata.info.Subject) {
-            const seed = metadata.info.Keywords;
-            const config = JSON.parse(metadata.info.Subject);
+        if (metadata.info && metadata.info.Subject) {
+            const configData = JSON.parse(metadata.info.Subject);
 
-            Object.keys(config).forEach(key => {
-                const element = document.getElementById(key);
-                if (element) {
-                    element.value = config[key];
+            // DECISIÓN: ¿Es un comprobante con items o una réplica normal?
+            if (configData.type === 'predefined' && configData.items) {
+                // CASO 1: Es un comprobante. Extraemos datos del nombre del archivo.
+                const filename = file.name.replace('.pdf', '');
+                const parts = filename.split('_');
+                let sapTrabajador = 'N_A';
+                let nombreTrabajador = 'N_A';
+                let nameParts = [];
+                let sapFound = false;
+
+                // Empezamos a buscar después de "Comprobante_Retiro_" o "Comprobante_Devolucion_"
+                for (let i = 2; i < parts.length; i++) {
+                    // El primer número que encontramos es el SAP del trabajador
+                    if (!isNaN(parseInt(parts[i])) && !sapFound) {
+                        sapTrabajador = parts[i];
+                        sapFound = true;
+                    } else if (!sapFound) {
+                        nameParts.push(parts[i]);
+                    }
                 }
-            });
-            paperSizeSelect.dispatchEvent(new Event('change'));
+                if (nameParts.length > 0) {
+                    nombreTrabajador = nameParts.join('_');
+                }
 
-            generatePdf(parseInt(seed, 10));
+                alert("Comprobante detectado. Se generarán etiquetas para los materiales encontrados.");
+                generatePdfFromItems(configData.items, nombreTrabajador, sapTrabajador);
 
+            } else if (metadata.info.Keywords) {
+                // CASO 2: Es una réplica normal basada en semilla.
+                const seed = metadata.info.Keywords;
+                Object.keys(configData).forEach(key => {
+                    const element = document.getElementById(key);
+                    if (element) {
+                        element.value = configData[key];
+                    }
+                });
+                paperSizeSelect.dispatchEvent(new Event('change'));
+                generatePdf(parseInt(seed, 10));
+            } else {
+                alert("Este PDF no es un comprobante válido ni contiene una semilla para replicar.");
+            }
         } else {
-            alert("Este PDF no contiene la información de semilla y configuración necesaria para ser replicado.");
+            alert("Este PDF no contiene los metadatos necesarios.");
         }
     } catch (error) {
-        console.error("Error al replicar el PDF:", error);
-        alert("Ocurrió un error al leer el PDF para replicar. Revisa la consola.");
+        console.error("Error al procesar el PDF:", error);
+        alert("Ocurrió un error al leer el PDF. Revisa la consola.");
     } finally {
         loader.style.display = 'none';
     }
 });
 
+// --- FUNCIÓN PARA GENERAR DESDE COMPROBANTE (CORREGIDA) ---
+function generatePdfFromItems(items, nombreTrabajador, sapTrabajador) {
+    const { jsPDF } = window.jspdf;
+    const config = {
+        paperSize: document.getElementById('paperSize').value,
+        customWidth: parseFloat(document.getElementById('customWidth').value),
+        customHeight: parseFloat(document.getElementById('customHeight').value),
+        labelWidth: parseFloat(document.getElementById('labelWidth').value),
+        labelHeight: parseFloat(document.getElementById('labelHeight').value),
+        marginTop: parseFloat(document.getElementById('marginTop').value),
+        marginLeft: parseFloat(document.getElementById('marginLeft').value),
+        hSpacing: parseFloat(document.getElementById('hSpacing').value),
+        vSpacing: parseFloat(document.getElementById('vSpacing').value),
+        barcodeType: document.getElementById('barcodeType').value,
+        barcodeHeight: parseFloat(document.getElementById('barcodeHeight').value),
+        fontSize: parseFloat(document.getElementById('fontSize').value),
+        quantity: items.length,
+    };
+
+    let paperWidth, paperHeight;
+    if (config.paperSize === 'custom') {
+        paperWidth = config.customWidth;
+        paperHeight = config.customHeight;
+    } else {
+        const tempDoc = new jsPDF({ unit: 'mm', format: config.paperSize });
+        paperWidth = tempDoc.internal.pageSize.getWidth();
+        paperHeight = tempDoc.internal.pageSize.getHeight();
+    }
+
+    if (!validarConfiguracion(config, paperWidth, paperHeight)) return;
+
+    const doc = new jsPDF({ unit: 'mm', format: [paperWidth, paperHeight] });
+
+    let x = config.marginLeft, y = config.marginTop;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i], newSerial = item.serial, description = item.description;
+        const canvas = document.createElement('canvas');
+        try {
+            JsBarcode(canvas, newSerial, {
+                format: config.barcodeType, width: 2, height: config.barcodeHeight * 3.78,
+                displayValue: true, text: newSerial, fontOptions: "bold",
+                fontSize: config.fontSize * 2, margin: 10
+            });
+        } catch (error) {
+            alert(`Error al generar código de barras para el serial "${newSerial}".`);
+            return;
+        }
+
+        const barcodeDataUrl = canvas.toDataURL('image/png');
+
+        // --- ZONA DE LA CORRECCIÓN ---
+        // El texto superior ahora es ÚNICAMENTE la descripción (ej: "3360-zzzzzz").
+        const topText = description;
+        if (topText) {
+            doc.setFontSize(config.fontSize > 2 ? config.fontSize - 1 : 2);
+            doc.text(topText, x + (config.labelWidth / 2), y + 4, { align: 'center' });
+        }
+        // --- FIN DE LA CORRECCIÓN ---
+
+        const imageY = description ? y + 5 : y;
+        const imageHeight = config.labelHeight - (description ? 5 : 0);
+        doc.addImage(barcodeDataUrl, 'PNG', x, imageY, config.labelWidth, imageHeight);
+
+        if (i < items.length - 1) {
+            x += config.labelWidth + config.hSpacing;
+            if (x + config.labelWidth > paperWidth) {
+                x = config.marginLeft;
+                y += config.labelHeight + config.vSpacing;
+                if (y + config.labelHeight > paperHeight) {
+                    doc.addPage();
+                    x = config.marginLeft;
+                    y = config.marginTop;
+                }
+            }
+        }
+    }
+
+    const fechaActual = new Date().toISOString().slice(0, 10);
+    const filename = `Etiquetas_Retiro_${nombreTrabajador}_${sapTrabajador}_${fechaActual}.pdf`;
+    doc.save(filename);
+}
 
 // --- Generador de Números Pseudo-Aleatorios (PRNG) ---
 function mulberry32(a) {
